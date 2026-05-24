@@ -19,11 +19,11 @@ from networking.protocol import (MSG_PEER_POS, MSG_CHAT, MSG_SAVE_REQ, MSG_SAVE_
 class Game:
     def __init__(self):
         pygame.init()
-        # On Android the native window is already fullscreen; passing FULLSCREEN
-        # tells SDL2 to use it directly instead of trying to create a new window.
-        _android = bool(os.environ.get("ANDROID_PRIVATE"))
-        _flags = pygame.FULLSCREEN if _android else 0
-        self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H), _flags)
+        # p4a SDL2 already runs in a fullscreen native window; just pass
+        # the logical resolution and let SDL2 scale to fit.  Do NOT pass
+        # pygame.FULLSCREEN — that forces a mode-switch that crashes on
+        # many Android devices.
+        self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
         pygame.display.set_caption(TITLE)
         self.clock  = pygame.time.Clock()
         self.world  = WorldManager()

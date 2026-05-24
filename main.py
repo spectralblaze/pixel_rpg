@@ -6,41 +6,83 @@ import traceback
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ── Android crash logger ───────────────────────────────────────────────────────
-# If the game throws any exception at startup, catch it, show it on-screen
-# (so you can read the error directly on the device), and write crash.log to
-# ANDROID_PRIVATE so you can pull it with adb later.
+# ─────────────────────────────────────────────────────────────────────────────
+# Crash helpers — called when an exception escapes Game.run()
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _write_crash_log(err_text: str) -> None:
+    """Write crash.log to the first writable location we can find."""
+    candidates = [
+        os.environ.get("ANDROID_PRIVATE", ""),
+        os.environ.get("ANDROID_ARGUMENT", ""),
+        "/sdcard",
+        os.path.dirname(os.path.abspath(__file__)),
+    ]
+    for folder in candidates:
+        if not folder:
+            continue
+        try:
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(folder, "crash.log")
+            with open(path, "w") as f:
+                f.write(err_text)
+            print("crash.log written to:", path)   # goes to adb logcat
+            return
+        except Exception:
+            continue
+
+
 def _show_crash(err_text: str) -> None:
-    """Render the crash traceback to the pygame surface and wait for a tap."""
+    """Best-effort: render the traceback to the pygame surface."""
     try:
         import pygame
         if not pygame.get_init():
             pygame.init()
+
+        # Try to get an existing surface; if none, create one.
         scr = pygame.display.get_surface()
         if scr is None:
-            scr = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            # Try without FULLSCREEN first — safer on Android
+            for mode_args in [((0, 0),), ((480, 320),)]:
+                try:
+                    scr = pygame.display.set_mode(*mode_args)
+                    break
+                except Exception:
+                    continue
+
+        if scr is None:
+            return  # display completely unavailable; crash.log is the fallback
+
+        W, H = scr.get_size()
         scr.fill((10, 0, 20))
-        font = pygame.font.SysFont(None, 22)
-        title = pygame.font.SysFont(None, 32).render(
-            "STARTUP CRASH  (tap to close)", True, (255, 80, 80))
-        scr.blit(title, (10, 8))
-        y = 46
-        for line in err_text.splitlines():
-            # Wrap long lines
-            while len(line) > 90:
-                surf = font.render(line[:90], True, (255, 200, 200))
+
+        try:
+            big   = pygame.font.SysFont(None, 30)
+            small = pygame.font.SysFont(None, 22)
+        except Exception:
+            return  # font system broken; give up
+
+        scr.blit(big.render("CRASH — tap / press to close", True, (255, 80, 80)),
+                 (10, 8))
+        scr.blit(small.render("crash.log saved to app storage", True,
+                               (160, 160, 160)), (10, H - 24))
+
+        y = 44
+        for raw_line in err_text.splitlines():
+            # hard-wrap long lines
+            while raw_line:
+                chunk, raw_line = raw_line[:85], raw_line[85:]
+                surf = small.render(chunk, True, (255, 200, 200))
                 scr.blit(surf, (10, y))
-                y += 22
-                line = "  " + line[90:]
-            surf = font.render(line, True, (255, 200, 200))
-            scr.blit(surf, (10, y))
-            y += 22
-            if y > scr.get_height() - 30:
+                y += 21
+                if y > H - 30:
+                    break
+            if y > H - 30:
                 break
-        hint = font.render("Crash log written to app storage", True, (160, 160, 160))
-        scr.blit(hint, (10, scr.get_height() - 26))
+
         pygame.display.flip()
-        # Wait for tap / keypress before closing
+
+        # Wait for a tap / keypress before exiting
         clock = pygame.time.Clock()
         waiting = True
         while waiting:
@@ -50,42 +92,36 @@ def _show_crash(err_text: str) -> None:
                     waiting = False
             clock.tick(30)
     except Exception:
-        pass  # if even the crash screen fails, just exit
+        pass  # crash screen itself failed — crash.log is the only output
 
 
-def _write_crash_log(err_text: str) -> None:
-    android_private = os.environ.get("ANDROID_PRIVATE", "")
-    log_dir = android_private if android_private else os.path.dirname(
-        os.path.abspath(__file__))
-    try:
-        with open(os.path.join(log_dir, "crash.log"), "w") as f:
-            f.write(err_text)
-    except Exception:
-        pass
-
-
-# ── Mixer pre-init (best-effort — some Android devices deny audio at boot) ─────
+# ─────────────────────────────────────────────────────────────────────────────
+# Mixer pre-init (best-effort — some Android devices deny audio at boot)
+# ─────────────────────────────────────────────────────────────────────────────
 try:
     import pygame
     pygame.mixer.pre_init(frequency=22050, size=-16, channels=2, buffer=512)
 except Exception:
-    pass  # audio will still be attempted inside Game.__init__; fail gracefully
+    pass
 
 
-# ── Main entry point ───────────────────────────────────────────────────────────
-def main():
+# ─────────────────────────────────────────────────────────────────────────────
+# Main entry point
+# ─────────────────────────────────────────────────────────────────────────────
+def main() -> None:
     try:
         from game import Game
         game = Game()
         game.run()
     except Exception:
         err = traceback.format_exc()
-        _write_crash_log(err)
-        _show_crash(err)
+        print(err)               # always goes to adb logcat
+        _write_crash_log(err)    # write BEFORE touching the display
+        _show_crash(err)         # show on-screen if possible
         sys.exit(1)
 
 
-# p4a imports this file as a module (so __name__ == 'main', not '__main__').
-# We need to handle both cases.
+# p4a may import this as a module (__name__ == 'main') rather than running it
+# as __main__, so we handle both cases.
 if __name__ in ("__main__", "main"):
     main()

@@ -71,6 +71,11 @@ android.entrypoint = org.kivy.android.PythonActivity
 # 'sdl2' bootstrap provides a pygame-compatible SDL2 window
 p4a.bootstrap = sdl2
 
+# Pin p4a to a stable tagged release that builds Python 3.11 for Android.
+# Without this, buildozer clones p4a master which now defaults to Python 3.14,
+# breaking pygame compilation (longintrepr.h was removed in Python 3.13+).
+p4a.branch = v2024.01.21
+
 # ── Buildozer logging ─────────────────────────────────────────────────────────
 [buildozer]
 log_level    = 2

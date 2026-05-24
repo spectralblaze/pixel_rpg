@@ -60,11 +60,56 @@ jobs:
           "build-tools;33.0.2" \
           "platform-tools" 2>/dev/null || true
 
+    # Override the p4a pygame recipe to use pygame 2.6.1 instead of 2.1.3.
+    # pygame 2.1.3 includes longintrepr.h (removed in Python 3.12+) in its
+    # _sdl2 C extension; 2.6.1 does not.  We download the sdist to compute
+    # the sha256 at build time so the recipe stays correct if PyPI ever
+    # re-releases the tarball.
+    - name: Create local pygame recipe (2.6.1 – fixes longintrepr.h)
+      run: |
+        mkdir -p p4a_recipes/pygame
+        pip download pygame==2.6.1 --no-deps --no-binary :all: -d /tmp/pg_dl
+        python3 - <<'PYEOF'
+        import hashlib, glob, sys, os
+
+        files = glob.glob('/tmp/pg_dl/pygame-*.tar.gz')
+        if not files:
+            sys.exit("ERROR: pygame 2.6.1 source tarball not found in /tmp/pg_dl")
+
+        sha256 = hashlib.sha256(open(files[0], 'rb').read()).hexdigest()
+        print(f"pygame 2.6.1 sha256 = {sha256}")
+
+        lines = [
+            "from pythonforandroid.recipes.pygame2 import Pygame2Recipe as _Base\n",
+            "\n",
+            "\n",
+            "class PygameRecipe(_Base):\n",
+            "    name = 'pygame'\n",
+            "    version = '2.6.1'\n",
+            "    url = (\n",
+            "        'https://files.pythonhosted.org/packages/source/p/pygame/'\n",
+            "        'pygame-{version}.tar.gz'\n",
+            "    )\n",
+            f"    sha256 = '{sha256}'\n",
+            "    patches = []  # no 2.1.3 patches needed for 2.6.1\n",
+            "\n",
+            "\n",
+            "recipe = PygameRecipe()\n",
+        ]
+
+        out = 'p4a_recipes/pygame/__init__.py'
+        with open(out, 'w') as fh:
+            fh.writelines(lines)
+        print(f"Recipe written to {out}")
+        PYEOF
+        echo "--- generated recipe ---"
+        cat p4a_recipes/pygame/__init__.py
+
     - name: Cache buildozer NDK and compiled recipes
       uses: actions/cache@v4
       with:
         path: ~/.buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}-v4
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-v5
         restore-keys: |
           buildozer-
 

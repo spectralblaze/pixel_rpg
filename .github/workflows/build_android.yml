@@ -61,48 +61,63 @@ jobs:
           "platform-tools" 2>/dev/null || true
 
     # Override the p4a pygame recipe to use pygame 2.6.1 instead of 2.1.3.
-    # pygame 2.1.3 includes longintrepr.h (removed in Python 3.12+) in its
-    # _sdl2 C extension; 2.6.1 does not.  We download the sdist to compute
-    # the sha256 at build time so the recipe stays correct if PyPI ever
-    # re-releases the tarball.
+    # pygame 2.1.3 includes longintrepr.h (removed from Android cross-compile
+    # headers) in its _sdl2 C extension; 2.6.1 does not.
+    # We query the PyPI JSON API for the sha256 — no SDL2 or build tools needed.
+    # Both 'pygame' and 'pygame2' recipe dirs are written so whichever name
+    # p4a resolves the requirement to, our override wins.
     - name: Create local pygame recipe (2.6.1 – fixes longintrepr.h)
       run: |
-        mkdir -p p4a_recipes/pygame
-        pip download pygame==2.6.1 --no-deps --no-binary :all: -d /tmp/pg_dl
+        mkdir -p p4a_recipes/pygame p4a_recipes/pygame2
         python3 - <<'PYEOF'
-        import hashlib, glob, sys, os
+        import urllib.request, json, os, sys
 
-        files = glob.glob('/tmp/pg_dl/pygame-*.tar.gz')
-        if not files:
-            sys.exit("ERROR: pygame 2.6.1 source tarball not found in /tmp/pg_dl")
+        # --- get sha256 from PyPI JSON API (no build, no SDL2 needed) ---
+        api = "https://pypi.org/pypi/pygame/2.6.1/json"
+        with urllib.request.urlopen(api) as resp:
+            data = json.loads(resp.read())
 
-        sha256 = hashlib.sha256(open(files[0], 'rb').read()).hexdigest()
+        sdist = next(
+            (f for f in data["releases"]["2.6.1"] if f["packagetype"] == "sdist"),
+            None,
+        )
+        if sdist is None:
+            sys.exit("ERROR: no sdist found for pygame 2.6.1 on PyPI")
+
+        sha256  = sdist["digests"]["sha256"]
+        dl_url  = sdist["url"]
+        # Turn the exact CDN URL into a {version} template
+        tpl_url = dl_url.replace("2.6.1", "{version}")
+
         print(f"pygame 2.6.1 sha256 = {sha256}")
+        print(f"url template        = {tpl_url}")
 
-        lines = [
-            "from pythonforandroid.recipes.pygame2 import Pygame2Recipe as _Base\n",
-            "\n",
-            "\n",
-            "class PygameRecipe(_Base):\n",
-            "    name = 'pygame'\n",
-            "    version = '2.6.1'\n",
-            "    url = (\n",
-            "        'https://files.pythonhosted.org/packages/source/p/pygame/'\n",
-            "        'pygame-{version}.tar.gz'\n",
-            "    )\n",
-            f"    sha256 = '{sha256}'\n",
-            "    patches = []  # no 2.1.3 patches needed for 2.6.1\n",
-            "\n",
-            "\n",
-            "recipe = PygameRecipe()\n",
-        ]
-
-        out = 'p4a_recipes/pygame/__init__.py'
-        with open(out, 'w') as fh:
-            fh.writelines(lines)
-        print(f"Recipe written to {out}")
+        # --- write recipe for both 'pygame' and 'pygame2' names ---
+        # Inheriting from Pygame2Recipe keeps all Android build flags/patches
+        # from the built-in recipe; we only swap version / url / sha256.
+        # patches=[] ensures 2.1.3-era patch files are not applied to 2.6.1.
+        for rname in ("pygame", "pygame2"):
+            content = (
+                "from pythonforandroid.recipes.pygame2 import Pygame2Recipe as _Base\n"
+                "\n"
+                "\n"
+                "class PygameRecipe(_Base):\n"
+                "    name    = '" + rname + "'\n"
+                "    version = '2.6.1'\n"
+                "    url     = '" + tpl_url + "'\n"
+                "    sha256  = '" + sha256 + "'\n"
+                "    patches = []  # 2.1.3 patches do not apply to 2.6.1\n"
+                "\n"
+                "\n"
+                "recipe = PygameRecipe()\n"
+            )
+            path = f"p4a_recipes/{rname}/__init__.py"
+            os.makedirs(f"p4a_recipes/{rname}", exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write(content)
+            print(f"Written: {path}")
         PYEOF
-        echo "--- generated recipe ---"
+        echo "--- pygame recipe ---"
         cat p4a_recipes/pygame/__init__.py
 
     - name: Cache buildozer NDK and compiled recipes

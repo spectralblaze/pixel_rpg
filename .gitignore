@@ -22,8 +22,7 @@ env/
 saves/
 *.json
 
-# PyInstaller
-*.spec
+# PyInstaller (exclude .spec files EXCEPT buildozer.spec)
 LegendsCursedRealm.spec
 
 # OS noise

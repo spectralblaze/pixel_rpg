@@ -56,8 +56,9 @@ class PygameRecipe(_Base):
             return
         with open(sdl2_c, 'r', encoding='utf-8') as fh:
             code = fh.read()
+        # pygame 2.1.3 sdl2.c uses double-quote form: #include "longintrepr.h"
         patched = code.replace(
-            '#include <longintrepr.h>',
+            '#include "longintrepr.h"',
             '#include <cpython/longintrepr.h>',
         )
         if patched != code:
@@ -65,7 +66,7 @@ class PygameRecipe(_Base):
                 fh.write(patched)
             print('[pygame patch] Fixed longintrepr.h -> cpython/longintrepr.h')
         else:
-            print('[pygame patch] longintrepr.h include not found, nothing to patch')
+            print('[pygame patch] #include "longintrepr.h" not found — already patched or wrong source?')
 
 
 recipe = PygameRecipe()

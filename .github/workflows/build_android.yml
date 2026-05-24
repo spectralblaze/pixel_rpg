@@ -45,6 +45,9 @@ jobs:
     - name: Set up Android SDK
       run: |
         echo "ANDROIDSDK=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        # Android Gradle plugin requires Java 17; the runner default is Java 11.
+        # JAVA_HOME_17_X64 is pre-set by the GitHub Actions runner image.
+        echo "JAVA_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
 
         # Accept all licenses non-interactively
         yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true

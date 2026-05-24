@@ -9,6 +9,10 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    # Opt into Node.js 24 now to silence the Node 20 deprecation warnings.
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
     - name: Checkout source
       uses: actions/checkout@v4

@@ -67,85 +67,11 @@ jobs:
           "build-tools;33.0.2" \
           "platform-tools" 2>/dev/null || true
 
-    # Override the p4a pygame recipe to use pygame 2.6.1 instead of 2.1.3.
-    # pygame 2.1.3 includes longintrepr.h (removed from Android cross-compile
-    # headers) in its _sdl2 C extension; 2.6.1 does not.
-    # We query the PyPI JSON API for the sha256 — no SDL2 or build tools needed.
-    # Both 'pygame' and 'pygame2' recipe dirs are written so whichever name
-    # p4a resolves the requirement to, our override wins.
-    - name: Create local pygame recipe (2.6.1 – fixes longintrepr.h)
-      run: |
-        mkdir -p p4a_recipes/pygame
-        python3 - <<'PYEOF'
-        import urllib.request, json, os, sys
-
-        # --- get sha256 from PyPI JSON API (no build, no SDL2 needed) ---
-        api = "https://pypi.org/pypi/pygame/2.6.1/json"
-        with urllib.request.urlopen(api) as resp:
-            data = json.loads(resp.read())
-
-        sdist = next(
-            (f for f in data["urls"] if f["packagetype"] == "sdist"),
-            None,
-        )
-        if sdist is None:
-            sys.exit("ERROR: no sdist found for pygame 2.6.1 on PyPI")
-
-        sha256  = sdist["digests"]["sha256"]
-        dl_url  = sdist["url"]
-        # Turn the exact CDN URL into a {version} template
-        tpl_url = dl_url.replace("2.6.1", "{version}")
-
-        print(f"pygame 2.6.1 sha256 = {sha256}")
-        print(f"url template        = {tpl_url}")
-
-        # --- write recipe for both 'pygame' and 'pygame2' names ---
-        # Inheriting from Pygame2Recipe keeps all Android build flags/patches
-        # from the built-in recipe; we only swap version / url / sha256.
-        # patches=[] ensures 2.1.3-era patch files are not applied to 2.6.1.
-        # At p4a v2024.01.21 the recipe module is 'pygame' (not 'pygame2').
-        # We cannot do a normal import because p4a registers OUR local recipe
-        # as sys.modules['pythonforandroid.recipes.pygame'] before running our
-        # code, which would cause a circular import.  Instead we load the
-        # built-in recipe file by path under a private module name so we can
-        # safely subclass it.
-        content = (
-            "import importlib.util as _ilu, os as _os, sys as _sys\n"
-            "\n"
-            "import pythonforandroid as _p4a\n"
-            "_builtin_path = _os.path.join(\n"
-            "    _os.path.dirname(_p4a.__file__), 'recipes', 'pygame', '__init__.py'\n"
-            ")\n"
-            "_spec = _ilu.spec_from_file_location('_pygame_builtin_recipe', _builtin_path)\n"
-            "_mod  = _ilu.module_from_spec(_spec)\n"
-            "_sys.modules['_pygame_builtin_recipe'] = _mod\n"
-            "_spec.loader.exec_module(_mod)\n"
-            "_Base = _mod.recipe.__class__\n"
-            "\n"
-            "\n"
-            "class PygameRecipe(_Base):\n"
-            "    name    = 'pygame'\n"
-            "    version = '2.6.1'\n"
-            "    url     = '" + tpl_url + "'\n"
-            "    sha256  = '" + sha256 + "'\n"
-            "    patches = []  # 2.1.3-era patches do not apply to 2.6.1\n"
-            "\n"
-            "\n"
-            "recipe = PygameRecipe()\n"
-        )
-        os.makedirs("p4a_recipes/pygame", exist_ok=True)
-        with open("p4a_recipes/pygame/__init__.py", "w") as fh:
-            fh.write(content)
-        print("Written: p4a_recipes/pygame/__init__.py")
-        PYEOF
-        echo "--- pygame recipe ---"
-        cat p4a_recipes/pygame/__init__.py
-
     - name: Cache buildozer NDK and compiled recipes
       uses: actions/cache@v4
       with:
         path: ~/.buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}-v5
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-v6
         restore-keys: |
           buildozer-
 

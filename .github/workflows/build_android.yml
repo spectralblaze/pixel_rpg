@@ -1,0 +1,77 @@
+name: Build Android APK
+
+# Runs automatically when you push to GitHub
+# Also has a manual "Run workflow" button in the Actions tab
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04   # Ubuntu 22.04 has best buildozer compatibility
+
+    steps:
+    # ── 1. Download your source code ─────────────────────────────────────────
+    - name: Checkout source
+      uses: actions/checkout@v4
+
+    # ── 2. Python 3.11 (3.12+ breaks p4a recipes) ────────────────────────────
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    # ── 3. System packages the NDK compiler needs ────────────────────────────
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y \
+          git zip unzip wget curl \
+          build-essential autoconf automake libtool \
+          libltdl-dev pkg-config cmake \
+          libffi-dev libssl-dev zlib1g-dev \
+          libsqlite3-dev libbz2-dev \
+          openjdk-17-jdk \
+          lld clang
+
+    # ── 4. Buildozer + p4a (pinned for stability) ────────────────────────────
+    - name: Install buildozer
+      run: |
+        pip install --upgrade pip wheel
+        pip install \
+          "buildozer==1.5.0" \
+          "cython==0.29.37" \
+          "python-for-android==2024.1.21"
+
+    # ── 5. Cache the heavy Android SDK/NDK downloads (~1.5 GB) ───────────────
+    #       First build still downloads everything; after that it's instant.
+    - name: Cache buildozer global directory
+      uses: actions/cache@v4
+      with:
+        path: ~/.buildozer
+        key: buildozer-${{ hashFiles('buildozer.spec') }}-v1
+        restore-keys: |
+          buildozer-
+
+    # ── 6. Accept Android SDK licenses (needed in CI) ────────────────────────
+    - name: Accept Android SDK licenses
+      run: |
+        mkdir -p ~/.android
+        echo "count=0" > ~/.android/repositories.cfg
+        yes | buildozer android update 2>/dev/null || true
+
+    # ── 7. THE BUILD ──────────────────────────────────────────────────────────
+    - name: Build debug APK
+      run: buildozer android debug
+      env:
+        # Suppress interactive prompts
+        BUILDOZER_WARN_ON_ROOT: "0"
+
+    # ── 8. Upload APK so you can download it from the Actions tab ────────────
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: LegendsCursedRealm-debug-apk
+        path: bin/*.apk
+        retention-days: 30   # kept for 30 days before auto-delete

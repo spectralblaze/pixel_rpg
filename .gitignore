@@ -1,0 +1,42 @@
+# Android build artifacts (gigabytes — never commit these)
+.buildozer/
+bin/
+build/
+_pyinstaller_work/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+
+# Virtual environments
+.venv*/
+venv/
+env/
+
+# Save files (personal game progress)
+saves/
+*.json
+
+# PyInstaller
+*.spec
+LegendsCursedRealm.spec
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Build logs
+build_android.log
+build.log

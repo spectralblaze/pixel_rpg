@@ -85,5 +85,7 @@ def main():
         sys.exit(1)
 
 
-if __name__ == "__main__":
+# p4a imports this file as a module (so __name__ == 'main', not '__main__').
+# We need to handle both cases.
+if __name__ in ("__main__", "main"):
     main()

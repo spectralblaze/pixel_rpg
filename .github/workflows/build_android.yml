@@ -78,7 +78,7 @@ jobs:
             data = json.loads(resp.read())
 
         sdist = next(
-            (f for f in data["releases"]["2.6.1"] if f["packagetype"] == "sdist"),
+            (f for f in data["urls"] if f["packagetype"] == "sdist"),
             None,
         )
         if sdist is None:

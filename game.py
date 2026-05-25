@@ -18,12 +18,19 @@ from networking.protocol import (MSG_PEER_POS, MSG_CHAT, MSG_SAVE_REQ, MSG_SAVE_
 
 class Game:
     def __init__(self):
+        # Request nearest-neighbour (pixel-perfect) scaling BEFORE pygame.init().
+        # Without this the SDL2 renderer uses bilinear filtering, which makes
+        # pixel-art tiles look blurry when upscaled to the phone's native
+        # resolution.  "0" = nearest, "1" = linear, "2" = anisotropic.
+        import os as _os
+        _os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "0")
+
         pygame.init()
-        # p4a SDL2 already runs in a fullscreen native window; just pass
-        # the logical resolution and let SDL2 scale to fit.  Do NOT pass
-        # pygame.FULLSCREEN — that forces a mode-switch that crashes on
-        # many Android devices.
-        self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+        # pygame.SCALED tells SDL2 to render the logical 1280×720 surface at
+        # whatever the physical screen size is, cleanly filling it on any phone.
+        # Do NOT also pass pygame.FULLSCREEN — p4a SDL2 manages the window
+        # natively and a forced mode-switch crashes on many Android devices.
+        self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H), pygame.SCALED)
         pygame.display.set_caption(TITLE)
         self.clock  = pygame.time.Clock()
         self.world  = WorldManager()

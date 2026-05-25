@@ -883,13 +883,19 @@ class ExplorationScreen(Screen):
                         pygame.draw.polygon(surf, (230, 235, 245), snow_pts)
     
                     elif tile == "water":
-                        # Ripple arcs
+                        # Ripple lines — three-segment wave, avoids draw.arc
+                        # which has rendering glitches on Android ARM/SDL2.
                         wave_off = (tick_ms // 600 + t_hash) % 3
+                        _wrc = (75, 145, 230)
                         for i in range(2):
                             wy = sy + 10 + i * 12 + wave_off * 2
                             wx = sx + 4 + (t_hash * (i + 1) * 3) % (TILE - 16)
-                            pygame.draw.arc(surf, (60, 130, 220),
-                                            (wx, wy, 18, 8), 0, math.pi, 2)
+                            pygame.draw.line(surf, _wrc,
+                                             (wx,      wy + 4), (wx + 5,  wy),     1)
+                            pygame.draw.line(surf, _wrc,
+                                             (wx + 5,  wy),     (wx + 10, wy + 4), 1)
+                            pygame.draw.line(surf, _wrc,
+                                             (wx + 10, wy + 4), (wx + 15, wy),     1)
     
                     elif tile == "snow":
                         # Small cross snowflakes
@@ -958,11 +964,16 @@ class ExplorationScreen(Screen):
                         pygame.draw.rect(surf, (28, 65, 168), (sx, sy, T - 1, T - 1))
                         # Animated water shimmer beneath the planks
                         wave_off = (tick_ms // 700 + t_hash) % 3
+                        _bwc = (55, 110, 220)
                         for wi in range(2):
                             wy2 = sy + 6 + wi * 14 + wave_off * 2
                             wx2 = sx + 3 + (t_hash * (wi + 1) * 5) % (T - 14)
-                            pygame.draw.arc(surf, (55, 110, 220),
-                                            (wx2, wy2, 16, 7), 0, math.pi, 1)
+                            pygame.draw.line(surf, _bwc,
+                                             (wx2,     wy2 + 3), (wx2 + 4,  wy2),     1)
+                            pygame.draw.line(surf, _bwc,
+                                             (wx2 + 4, wy2),     (wx2 + 9,  wy2 + 3), 1)
+                            pygame.draw.line(surf, _bwc,
+                                             (wx2 + 9, wy2 + 3), (wx2 + 13, wy2),     1)
                         # Detect orientation from neighbours:
                         #   N-S bridge (travels N↔S) → horizontal plank boards
                         #   E-W bridge (travels E↔W) → vertical plank boards

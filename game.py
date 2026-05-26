@@ -36,8 +36,10 @@ class Game:
             self._display   = pygame.display.set_mode((0, 0))
             self._display_w = self._display.get_width()
             self._display_h = self._display.get_height()
-            # Logical drawing surface — all game code targets this resolution
-            self.screen = pygame.Surface((SCREEN_W, SCREEN_H))
+            # Logical drawing surface — all game code targets this resolution.
+            # .convert() ensures the pixel format matches the display surface
+            # so colours are reproduced faithfully on Android (no channel swap).
+            self.screen = pygame.Surface((SCREEN_W, SCREEN_H)).convert()
         else:
             self._display   = None
             self._display_w = SCREEN_W

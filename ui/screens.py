@@ -993,11 +993,21 @@ class ExplorationScreen(Screen):
                                          (sx + 14, sy + 14), 1)
     
                     elif tile == "cave":
-                        # Arched entrance
-                        pygame.draw.arc(surf, (25, 22, 18),
-                                        (sx + 6, sy + 8, TILE - 12, TILE - 14),
-                                        0, math.pi, 3)
-                        pygame.draw.rect(surf, (25, 22, 18),
+                        # Arched entrance — polygon outline replaces draw.arc
+                        # (arc has rendering glitches on Android ARM/SDL2)
+                        _cca = (25, 22, 18)
+                        _ccx = sx + TILE // 2
+                        # Upper semicircle approx: 7 points spanning the arch
+                        pygame.draw.lines(surf, _cca, False, [
+                            (sx + 6,      sy + 8 + 17),
+                            (sx + 10,     sy + 8 + 6),
+                            (sx + 18,     sy + 8 + 1),
+                            (_ccx,        sy + 8),
+                            (sx + TILE - 18, sy + 8 + 1),
+                            (sx + TILE - 10, sy + 8 + 6),
+                            (sx + TILE - 6,  sy + 8 + 17),
+                        ], 3)
+                        pygame.draw.rect(surf, _cca,
                                          (sx + 9, sy + 8 + (TILE - 14) // 2,
                                           TILE - 18, (TILE - 14) // 2))
     
@@ -1454,9 +1464,13 @@ class ExplorationScreen(Screen):
                         pygame.draw.ellipse(surf, (32, 85, 172),
                                             (_mcx - 8, _mcy + 1, 16, 7))
                         _wv = int(math.sin(tick_ms * 0.004 + t_hash))
-                        pygame.draw.arc(surf, (72, 142, 222),
-                                        (_mcx - 5, _mcy + 2 + _wv, 10, 4),
-                                        0, math.pi, 1)
+                        # V-ripple replaces draw.arc (unreliable on Android)
+                        pygame.draw.line(surf, (72, 142, 222),
+                                         (_mcx - 4, _mcy + 4 + _wv),
+                                         (_mcx,     _mcy + 2 + _wv), 1)
+                        pygame.draw.line(surf, (72, 142, 222),
+                                         (_mcx,     _mcy + 2 + _wv),
+                                         (_mcx + 4, _mcy + 4 + _wv), 1)
 
                     elif ltype == "shrine":
                         # Sacred purple backdrop
@@ -1553,10 +1567,16 @@ class ExplorationScreen(Screen):
                                          (_mcx + 5, sy + 6, 4, T - 17))
                         pygame.draw.rect(surf, (66, 59, 51),
                                          (_mcx + 5, sy + 4, 9, 5))
-                        # Broken arch lintel between columns
-                        pygame.draw.arc(surf, (73, 66, 58),
-                                        (_mcx - 13, sy + 10, 28, 22),
-                                        0, math.pi, 3)
+                        # Broken arch lintel — polyline replaces draw.arc
+                        pygame.draw.lines(surf, (73, 66, 58), False, [
+                            (_mcx - 13, sy + 21),
+                            (_mcx - 10, sy + 14),
+                            (_mcx - 5,  sy + 11),
+                            (_mcx,      sy + 10),
+                            (_mcx + 5,  sy + 11),
+                            (_mcx + 10, sy + 14),
+                            (_mcx + 13, sy + 21),
+                        ], 3)
                         # Scattered rubble
                         for _ri in range(4):
                             _rrx = _mcx - 7 + (_ri * 5 + (t_hash >> 5)) % 16

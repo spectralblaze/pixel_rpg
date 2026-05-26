@@ -90,6 +90,9 @@ class Game:
 
     # ── Screen management ────────────────────────────────────────────────────
     def set_screen(self, name: str, **kwargs):
+        # Always dismiss the soft keyboard when navigating between screens
+        # so it doesn't persist after leaving a text-input screen.
+        pygame.key.stop_text_input()
         screens = {
             "splash":       lambda: SplashScreen(self),
             "main_menu":    lambda: MainMenuScreen(self),

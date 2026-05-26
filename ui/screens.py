@@ -275,19 +275,42 @@ class CharCreateScreen(Screen):
 
     def handle_event(self, event):
         if self.page == "name":
-            if event.type == pygame.MOUSEBUTTONDOWN and self.name_rect.collidepoint(event.pos):
-                self.name_active = True
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                self.name_active = False
-            if self.name_active and event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_BACKSPACE:
-                    self.name = self.name[:-1]
-                elif event.key == pygame.K_RETURN:
-                    if self.name.strip():
-                        self.page = "class"
-                elif len(self.name) < 16 and event.unicode.isprintable():
-                    self.name += event.unicode
+            # ── Field focus ───────────────────────────────────────────────────
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if self.name_rect.collidepoint(event.pos):
+                    self.name_active = True
+                    pygame.key.start_text_input()   # show Android soft keyboard
+                else:
+                    self.name_active = False
+                    pygame.key.stop_text_input()
+            elif event.type == pygame.FINGERDOWN:
+                # Direct tap on field (Android — MOUSEBUTTONDOWN may not fire)
+                fx = int(event.x * SCREEN_W)
+                fy = int(event.y * SCREEN_H)
+                if self.name_rect.collidepoint(fx, fy):
+                    self.name_active = True
+                    pygame.key.start_text_input()
+
+            # ── Text entry ────────────────────────────────────────────────────
+            if self.name_active:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_BACKSPACE:
+                        self.name = self.name[:-1]
+                    elif event.key == pygame.K_RETURN:
+                        if self.name.strip():
+                            pygame.key.stop_text_input()
+                            self.page = "class"
+                elif event.type == pygame.TEXTINPUT:
+                    # TEXTINPUT is the correct cross-platform path for typed
+                    # characters — it handles IME / swipe keyboards on Android
+                    # and avoids the double-input that happens when both
+                    # KEYDOWN.unicode and TEXTINPUT fire simultaneously.
+                    for ch in event.text:
+                        if ch.isprintable() and len(self.name) < 16:
+                            self.name += ch
+
             if self.btn_next.is_clicked(event) and self.name.strip():
+                pygame.key.stop_text_input()
                 self.page = "class"
 
         elif self.page == "class":
@@ -517,18 +540,38 @@ class ExplorationScreen(Screen):
                         self._chat_timer = self._chat_visible
                     self._chat_typing = False
                     self._chat_input  = ""
+                    pygame.key.stop_text_input()
                 elif event.key == pygame.K_ESCAPE:
                     self._chat_typing = False
                     self._chat_input  = ""
+                    pygame.key.stop_text_input()
                 elif event.key == pygame.K_BACKSPACE:
                     self._chat_input = self._chat_input[:-1]
-                elif event.unicode and event.unicode.isprintable() and len(self._chat_input) < 80:
-                    self._chat_input += event.unicode
+            elif event.type == pygame.TEXTINPUT:
+                # TEXTINPUT handles both desktop (with start_text_input active)
+                # and Android virtual keyboards / swipe / IME reliably.
+                for ch in event.text:
+                    if ch.isprintable() and len(self._chat_input) < 80:
+                        self._chat_input += ch
             return   # absorb all events while typing
 
         if self.game.mp_mode and not self._chat_typing:
+            _open_chat = False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_t:
+                _open_chat = True
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # "[T] Chat" hint is drawn near bottom-left; make it tappable
+                _chat_hint = pygame.Rect(0, SCREEN_H - 86, 80, 30)
+                if _chat_hint.collidepoint(event.pos):
+                    _open_chat = True
+            elif event.type == pygame.FINGERDOWN:
+                _chat_hint = pygame.Rect(0, SCREEN_H - 86, 80, 30)
+                if _chat_hint.collidepoint(int(event.x * SCREEN_W),
+                                           int(event.y * SCREEN_H)):
+                    _open_chat = True
+            if _open_chat:
                 self._chat_typing = True
+                pygame.key.start_text_input()   # show Android soft keyboard
                 return
 
         if event.type == pygame.KEYDOWN:
@@ -3598,6 +3641,9 @@ class JoinLobbyScreen(Screen):
         self.btn_connect = Button(pygame.Rect(cx - bw // 2, 345, bw, bh), "Connect", (60, 160, 60))
         self.btn_cancel  = Button(pygame.Rect(cx - bw // 2, 405, bw, bh), "Cancel",  DARK_RED)
 
+        # Show the soft keyboard immediately — field is active on entry
+        pygame.key.start_text_input()
+
     def handle_event(self, event):
         # While connecting, only allow Cancel
         if self._connecting:
@@ -3608,23 +3654,40 @@ class JoinLobbyScreen(Screen):
                 self._status_col = UI_DIM
             return
 
-        # IP text field
+        # ── IP field focus ────────────────────────────────────────────────
         if event.type == pygame.MOUSEBUTTONDOWN:
-            self._ip_active = self._ip_rect.collidepoint(event.pos)
+            if self._ip_rect.collidepoint(event.pos):
+                self._ip_active = True
+                pygame.key.start_text_input()
+            else:
+                self._ip_active = False
+                pygame.key.stop_text_input()
+        elif event.type == pygame.FINGERDOWN:
+            fx = int(event.x * SCREEN_W)
+            fy = int(event.y * SCREEN_H)
+            if self._ip_rect.collidepoint(fx, fy):
+                self._ip_active = True
+                pygame.key.start_text_input()
 
-        if self._ip_active and event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_BACKSPACE:
-                self._ip_text = self._ip_text[:-1]
-            elif event.key == pygame.K_RETURN:
-                self._try_connect()
-            elif event.unicode.isprintable() and len(self._ip_text) < 45:
-                self._ip_text += event.unicode
+        # ── Text entry ────────────────────────────────────────────────────
+        if self._ip_active:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_BACKSPACE:
+                    self._ip_text = self._ip_text[:-1]
+                elif event.key == pygame.K_RETURN:
+                    self._try_connect()
+            elif event.type == pygame.TEXTINPUT:
+                for ch in event.text:
+                    if ch.isprintable() and len(self._ip_text) < 45:
+                        self._ip_text += ch
 
         if self.btn_connect.is_clicked(event):
             self._try_connect()
         if self.btn_cancel.is_clicked(event):
+            pygame.key.stop_text_input()
             self.game.set_screen("pause")
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            pygame.key.stop_text_input()
             self.game.set_screen("pause")
 
     def _try_connect(self):

@@ -18,19 +18,32 @@ from networking.protocol import (MSG_PEER_POS, MSG_CHAT, MSG_SAVE_REQ, MSG_SAVE_
 
 class Game:
     def __init__(self):
-        # Request nearest-neighbour (pixel-perfect) scaling BEFORE pygame.init().
-        # Without this the SDL2 renderer uses bilinear filtering, which makes
-        # pixel-art tiles look blurry when upscaled to the phone's native
-        # resolution.  "0" = nearest, "1" = linear, "2" = anisotropic.
         import os as _os
-        _os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "0")
-
         pygame.init()
-        # pygame.SCALED tells SDL2 to render the logical 1280×720 surface at
-        # whatever the physical screen size is, cleanly filling it on any phone.
-        # Do NOT also pass pygame.FULLSCREEN — p4a SDL2 manages the window
-        # natively and a forced mode-switch crashes on many Android devices.
-        self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H), pygame.SCALED)
+
+        # ── Display setup ──────────────────────────────────────────────────────
+        # pygame.SCALED requires SDL2's hardware-renderer mode, which the p4a
+        # SDL2 bootstrap does NOT use — so the flag is silently ignored and the
+        # 1280×720 surface just sits centred on the phone screen.
+        #
+        # Fix: on Android, call set_mode((0,0)) to get a surface that matches
+        # the native screen resolution, then draw everything to a separate
+        # 1280×720 logical Surface and pygame.transform.scale it to fill the
+        # display each frame.  On desktop everything works as before.
+        _android = bool(_os.environ.get("ANDROID_PRIVATE"))
+        if _android:
+            # Native full-screen surface (e.g. 2400×1080 on a modern phone)
+            self._display   = pygame.display.set_mode((0, 0))
+            self._display_w = self._display.get_width()
+            self._display_h = self._display.get_height()
+            # Logical drawing surface — all game code targets this resolution
+            self.screen = pygame.Surface((SCREEN_W, SCREEN_H))
+        else:
+            self._display   = None
+            self._display_w = SCREEN_W
+            self._display_h = SCREEN_H
+            self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+
         pygame.display.set_caption(TITLE)
         self.clock  = pygame.time.Clock()
         self.world  = WorldManager()
@@ -334,7 +347,10 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                self._current_screen.handle_event(event)
+                # On Android, MOUSE* events carry physical-pixel coords (e.g.
+                # 2400×1080).  Remap them to logical 1280×720 before screens
+                # see them so collidepoint() checks work correctly.
+                self._current_screen.handle_event(self._to_logical(event))
 
             self._current_screen.update(dt)
 
@@ -347,8 +363,48 @@ class Game:
                     self._mp_broadcast_pos()
 
             self._current_screen.draw(self.screen)
-            pygame.display.flip()
+
+            if self._display is not None:
+                # Stretch-scale the 1280×720 logical surface to fill the phone
+                # screen.  3-arg transform.scale() blits directly into _display
+                # (no extra allocation).  A slight aspect-ratio distortion on
+                # non-16:9 phones is intentional — it's less jarring than black
+                # bars and keeps all UI elements comfortably in reach.
+                pygame.transform.scale(
+                    self.screen,
+                    (self._display_w, self._display_h),
+                    self._display,
+                )
+                pygame.display.flip()
+            else:
+                pygame.display.flip()
 
         # Clean up MP on exit
         self.stop_multiplayer()
         pygame.quit()
+
+    def _to_logical(self, event):
+        """Translate physical-pixel MOUSE* coordinates to logical 1280×720 space.
+
+        On Android the display surface is the full native resolution (e.g.
+        2400×1080).  pygame fires MOUSEBUTTONDOWN/MOTION with pixel coords in
+        that space, but all Rect / collidepoint checks in the game use the
+        1280×720 logical coordinate system.  This method remaps the pos tuple
+        so the rest of the code never has to know about the physical size.
+
+        On desktop self._display is None, so this is a zero-cost no-op.
+        """
+        if self._display is None:
+            return event
+        if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP,
+                               pygame.MOUSEMOTION):
+            return event
+        if not hasattr(event, 'pos'):
+            return event
+        px, py = event.pos
+        lx = px * SCREEN_W // self._display_w
+        ly = py * SCREEN_H // self._display_h
+        try:
+            return pygame.event.Event(event.type, {**event.dict, 'pos': (lx, ly)})
+        except Exception:
+            return event

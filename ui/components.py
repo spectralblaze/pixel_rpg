@@ -127,16 +127,16 @@ class Button:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.enabled and self.rect.collidepoint(event.pos):
                 return True
-        # Android / SDL touch events — map normalised finger coords to screen space
+        # Android / SDL touch events — map normalised finger coords to the
+        # LOGICAL game surface (1280×720), not the physical display surface.
+        # The physical display may be larger (e.g. 2400×1080) on Android;
+        # using scr.get_width()/height() would give wrong coordinates there.
         if event.type == pygame.FINGERDOWN:
             if self.enabled:
-                import pygame as _pg
-                scr = _pg.display.get_surface()
-                if scr:
-                    fx = int(event.x * scr.get_width())
-                    fy = int(event.y * scr.get_height())
-                    if self.rect.collidepoint(fx, fy):
-                        return True
+                fx = int(event.x * SCREEN_W)
+                fy = int(event.y * SCREEN_H)
+                if self.rect.collidepoint(fx, fy):
+                    return True
         return False
 
 

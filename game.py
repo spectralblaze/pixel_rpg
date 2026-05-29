@@ -32,19 +32,34 @@ class Game:
         # display each frame.  On desktop everything works as before.
         _android = bool(_os.environ.get("ANDROID_PRIVATE"))
         if _android:
-            # Native full-screen surface (e.g. 2400×1080 on a modern phone)
-            self._display   = pygame.display.set_mode((0, 0))
-            self._display_w = self._display.get_width()
-            self._display_h = self._display.get_height()
+            # Full-screen native surface (e.g. 2400×1080 on a modern phone).
+            self._display = pygame.display.set_mode((0, 0))
+            _rw = self._display.get_width()
+            _rh = self._display.get_height()
+            # ── Uniform (letterbox) scaling ───────────────────────────────────
+            # Scale by the SAME factor in both axes so the 16:9 aspect ratio is
+            # preserved.  Stretching to fill non-16:9 screens distorts circles
+            # into ellipses and makes tiles look wrong compared to the PC view.
+            #
+            # Examples:
+            #   1920×1080 phone → 1.5× → 1920×1080  (fills screen perfectly)
+            #   2400×1080 phone → 1.5× → 1920×1080  (240 px black side bars)
+            #   2560×1440 phone → 2.0× → 2560×1440  (fills screen perfectly)
+            _scale       = min(_rw / SCREEN_W, _rh / SCREEN_H)
+            self._game_w = int(SCREEN_W * _scale)
+            self._game_h = int(SCREEN_H * _scale)
+            self._game_x = (_rw - self._game_w) // 2
+            self._game_y = (_rh - self._game_h) // 2
             # Logical drawing surface — all game code targets this resolution.
-            # .convert() ensures the pixel format matches the display surface
-            # so colours are reproduced faithfully on Android (no channel swap).
+            # .convert() matches the display pixel format (avoids colour shifts).
             self.screen = pygame.Surface((SCREEN_W, SCREEN_H)).convert()
         else:
-            self._display   = None
-            self._display_w = SCREEN_W
-            self._display_h = SCREEN_H
-            self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+            self._display = None
+            self._game_w  = SCREEN_W
+            self._game_h  = SCREEN_H
+            self._game_x  = 0
+            self._game_y  = 0
+            self.screen   = pygame.display.set_mode((SCREEN_W, SCREEN_H))
 
         pygame.display.set_caption(TITLE)
         self.clock  = pygame.time.Clock()
@@ -352,9 +367,15 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                # On Android, MOUSE* events carry physical-pixel coords (e.g.
-                # 2400×1080).  Remap them to logical 1280×720 before screens
-                # see them so collidepoint() checks work correctly.
+                # On Android, SDL2 fires both FINGERDOWN and MOUSEBUTTONDOWN
+                # for every touch (touch-as-mouse emulation).  _to_logical()
+                # now correctly maps MOUSEBUTTONDOWN to logical coords, so
+                # suppress the redundant FINGER* events to prevent each tap
+                # from registering twice.
+                if self._display is not None and event.type in (
+                    pygame.FINGERDOWN, pygame.FINGERUP, pygame.FINGERMOTION,
+                ):
+                    continue
                 self._current_screen.handle_event(self._to_logical(event))
 
             self._current_screen.update(dt)
@@ -370,16 +391,16 @@ class Game:
             self._current_screen.draw(self.screen)
 
             if self._display is not None:
-                # Stretch-scale the 1280×720 logical surface to fill the phone
-                # screen.  3-arg transform.scale() blits directly into _display
-                # (no extra allocation).  A slight aspect-ratio distortion on
-                # non-16:9 phones is intentional — it's less jarring than black
-                # bars and keeps all UI elements comfortably in reach.
-                pygame.transform.scale(
-                    self.screen,
-                    (self._display_w, self._display_h),
-                    self._display,
+                # Fill letterbox bars (visible on wider-than-16:9 phones).
+                self._display.fill((0, 0, 0))
+                # Scale game into the letterboxed rect (uniform scale, no
+                # distortion).  subsurface() gives a view into the display
+                # surface so transform.scale() writes directly there.
+                _dest = self._display.subsurface(
+                    pygame.Rect(self._game_x, self._game_y,
+                                self._game_w, self._game_h)
                 )
+                pygame.transform.scale(self.screen, (self._game_w, self._game_h), _dest)
                 pygame.display.flip()
             else:
                 pygame.display.flip()
@@ -407,8 +428,9 @@ class Game:
         if not hasattr(event, 'pos'):
             return event
         px, py = event.pos
-        lx = px * SCREEN_W // self._display_w
-        ly = py * SCREEN_H // self._display_h
+        # Subtract letterbox offset then scale from game pixels → logical pixels.
+        lx = (px - self._game_x) * SCREEN_W // max(1, self._game_w)
+        ly = (py - self._game_y) * SCREEN_H // max(1, self._game_h)
         try:
             return pygame.event.Event(event.type, {**event.dict, 'pos': (lx, ly)})
         except Exception:

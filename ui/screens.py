@@ -3031,6 +3031,22 @@ class ShopScreen(Screen):
         self.tab_buy  = Button(pygame.Rect(200, 10, 100, 36), "Buy")
         self.tab_sell = Button(pygame.Rect(310, 10, 100, 36), "Sell")
 
+        # ── Sell-quantity dialog ──────────────────────────────────────────────
+        self._qty_active  = False  # modal open?
+        self._qty_text    = "1"    # digits the player has typed
+        self._qty_entry   = None   # inventory dict entry being sold
+        self._qty_price   = 0      # gold per single item
+        _dw, _dh = 380, 228
+        _dx = (SCREEN_W - _dw) // 2
+        _dy = (SCREEN_H - _dh) // 2
+        self._qty_panel   = pygame.Rect(_dx, _dy, _dw, _dh)
+        self._qty_input   = pygame.Rect(_dx + 104, _dy + 104, 124, 38)
+        self._qty_max_btn = Button(pygame.Rect(_dx + 240, _dy + 104, 72, 38), "Max")
+        self._qty_ok_btn  = Button(pygame.Rect(_dx + 28,  _dy + 166, 140, 42),
+                                   "Confirm", DARK_GREEN)
+        self._qty_can_btn = Button(pygame.Rect(_dx + 212, _dy + 166, 140, 42),
+                                   "Cancel",  DARK_RED)
+
     def _build(self):
         p = self.game.player
         # Buy list
@@ -3055,6 +3071,35 @@ class ShopScreen(Screen):
         self.sell_list = ScrollList(pygame.Rect(SCREEN_W//2 + 10, 60, SCREEN_W//2 - 20, SCREEN_H - 130), sell_items, item_h=38)
 
     def handle_event(self, event):
+        # ── Sell-quantity modal (absorbs all events while open) ───────────────
+        if self._qty_active:
+            # Confirm
+            if self._qty_ok_btn.is_clicked(event) or (
+                event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN
+            ):
+                self._do_sell_qty()
+                return
+            # Cancel
+            if self._qty_can_btn.is_clicked(event) or (
+                event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE
+            ):
+                self._close_qty_dialog()
+                return
+            # Max
+            if self._qty_max_btn.is_clicked(event) and self._qty_entry:
+                self._qty_text = str(self._qty_entry.get("qty", 1))
+                return
+            # Digit input
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_BACKSPACE:
+                self._qty_text = self._qty_text[:-1]
+            elif event.type == pygame.TEXTINPUT:
+                for ch in event.text:
+                    if ch.isdigit() and len(self._qty_text) < 4:
+                        # replace a lone "0" rather than prefix it
+                        self._qty_text = ch if self._qty_text == "0" else self._qty_text + ch
+            return   # block all shop interactions while modal is open
+
+        # ── Normal shop handling ──────────────────────────────────────────────
         if self.btn_back.is_clicked(event):
             self.game.set_screen("village")
         if self.tab_buy.is_clicked(event): self.tab = "buy"
@@ -3069,7 +3114,7 @@ class ShopScreen(Screen):
         if self.btn_buy.is_clicked(event) and self.selected_buy >= 0:
             self._do_buy()
         if self.btn_sell.is_clicked(event) and self.selected_sell >= 0:
-            self._do_sell()
+            self._open_qty_dialog()
 
     def _do_buy(self):
         p = self.game.player
@@ -3084,21 +3129,51 @@ class ShopScreen(Screen):
         self.msg = f"Bought {item.get('name','?')}!"
         self._build()
 
-    def _do_sell(self):
+    # ── Sell-quantity dialog helpers ──────────────────────────────────────────
+
+    def _open_qty_dialog(self):
+        """Open the 'how many?' modal for the currently selected sell item."""
         from systems.loot import item_sell_price
         p = self.game.player
-        if self.selected_sell >= len(p.inventory): return
-        entry = p.inventory[self.selected_sell]
-        price = item_sell_price(entry["id"], entry.get("rarity","common"))
-        p.gold += price
-        p.remove_item(entry["id"])
-        self.msg = f"Sold for {price}g!"
+        if self.selected_sell >= len(p.inventory):
+            return
+        self._qty_entry  = p.inventory[self.selected_sell]
+        self._qty_price  = item_sell_price(
+            self._qty_entry["id"], self._qty_entry.get("rarity", "common"))
+        self._qty_text   = "1"
+        self._qty_active = True
+        pygame.key.start_text_input()
+
+    def _close_qty_dialog(self):
+        self._qty_active = False
+        self._qty_entry  = None
+        pygame.key.stop_text_input()
+
+    def _do_sell_qty(self):
+        """Commit the sale for the quantity the player entered."""
+        if not self._qty_entry:
+            self._close_qty_dialog()
+            return
+        try:
+            qty = max(1, int(self._qty_text or "1"))
+        except ValueError:
+            qty = 1
+        available = self._qty_entry.get("qty", 1)
+        qty   = min(qty, available)
+        total = self._qty_price * qty
+        self.game.player.gold += total
+        self.game.player.remove_item(self._qty_entry["id"], qty)
+        self.msg = f"Sold {qty}× for {total}g!"
+        self._close_qty_dialog()
         self._build()
 
     def update(self, dt):
         mp = pygame.mouse.get_pos()
         for btn in (self.btn_back, self.btn_buy, self.btn_sell, self.tab_buy, self.tab_sell):
             btn.update(mp)
+        if self._qty_active:
+            for btn in (self._qty_ok_btn, self._qty_can_btn, self._qty_max_btn):
+                btn.update(mp)
 
     def draw(self, surf):
         surf.fill(UI_BG)
@@ -3111,6 +3186,61 @@ class ShopScreen(Screen):
         self.btn_back.draw(surf); self.btn_buy.draw(surf); self.btn_sell.draw(surf)
         if self.msg:
             draw_text_centered(surf, self.msg, SCREEN_H - 70, YELLOW, size=14)
+        if self._qty_active:
+            self._draw_qty_dialog(surf)
+
+    def _draw_qty_dialog(self, surf):
+        from data.items_data import ITEMS
+        # Dim the shop behind the modal
+        _overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        _overlay.fill((0, 0, 0, 160))
+        surf.blit(_overlay, (0, 0))
+
+        # Panel
+        pygame.draw.rect(surf, UI_PANEL, self._qty_panel, border_radius=8)
+        pygame.draw.rect(surf, UI_BORDER, self._qty_panel, 2, border_radius=8)
+
+        entry  = self._qty_entry
+        item   = ITEMS.get(entry["id"], {})
+        rarity = entry.get("rarity", "common")
+        avail  = entry.get("qty", 1)
+        dx, dy = self._qty_panel.x, self._qty_panel.y
+
+        # Title / item info
+        draw_text_centered(surf, "How many would you like to sell?",
+                           dy + 14, GOLD, size=17)
+        draw_text_centered(surf, item.get("name", "?"),
+                           dy + 42, RARITY_COLORS.get(rarity, WHITE), size=16)
+        draw_text_centered(surf,
+                           f"{self._qty_price}g each  •  In stock: {avail}",
+                           dy + 66, UI_DIM, size=13)
+
+        # "Qty:" label + input box
+        draw_text(surf, "Qty:", dx + 24, dy + 114, WHITE, size=15)
+        _box_col = GOLD if self._qty_active else UI_BORDER
+        pygame.draw.rect(surf, UI_BG,   self._qty_input, border_radius=5)
+        pygame.draw.rect(surf, _box_col, self._qty_input, 2, border_radius=5)
+        _cursor  = "|" if pygame.time.get_ticks() % 900 < 450 else ""
+        draw_text(surf, self._qty_text + _cursor,
+                  self._qty_input.x + 10, self._qty_input.y + 8,
+                  WHITE, size=18)
+
+        # Max button
+        self._qty_max_btn.draw(surf)
+
+        # Running total
+        try:
+            _q = min(max(0, int(self._qty_text or "0")), avail)
+        except ValueError:
+            _q = 0
+        _total = self._qty_price * _q
+        _total_col = YELLOW if _q > 0 else UI_DIM
+        draw_text_centered(surf, f"Total: {_total}g",
+                           dy + 146, _total_col, size=15)
+
+        # Confirm / Cancel buttons
+        self._qty_ok_btn.draw(surf)
+        self._qty_can_btn.draw(surf)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

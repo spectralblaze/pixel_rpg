@@ -667,13 +667,14 @@ class ExplorationScreen(Screen):
                 self.game._pending_boss_id = boss_id
                 return
             elif boss_id and boss_id in p.defeated_bosses:
-                # Boss defeated — portal is active at the lair centre
+                # Boss defeated — portal is active at the lair centre.
+                # story_unlock is now the actual biome ID (e.g. "whispering_forest").
+                # "ending" is the final boss special case — no portal biome.
                 from data.monsters_data import MONSTERS
                 unlock = MONSTERS.get(boss_id, {}).get("story_unlock", "")
-                if unlock and unlock.endswith("_access"):
-                    dest_biome = unlock.replace("_access", "")
-                    dest_name  = BIOMES.get(dest_biome, {}).get("name", dest_biome)
-                    self._pending_portal_dest = dest_biome
+                if unlock and unlock in BIOMES:
+                    dest_name = BIOMES[unlock]["name"]
+                    self._pending_portal_dest = unlock
                     self.dialog = DialogBox([
                         "✦ A shimmering portal pulses with arcane energy.",
                         f"Destination: {dest_name}",

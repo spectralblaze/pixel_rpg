@@ -134,7 +134,7 @@ MONSTERS = {
                  {"item":"iron_ring","chance":0.4,"rarity":"uncommon"},
                  {"item":"steel_helm","chance":0.25,"rarity":"rare"}],
         "evolve_name":None,"boss":True,
-        "story_unlock":"forest_access",
+        "story_unlock":"whispering_forest",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -238,7 +238,7 @@ MONSTERS = {
                  {"item":"elven_bow","chance":0.4,"rarity":"rare"},
                  {"item":"mithril_ore","chance":0.3,"rarity":"rare"},
                  {"item":"ring_vigor","chance":0.35,"rarity":"uncommon"}],
-        "evolve_name":None,"boss":True,"story_unlock":"desert_access",
+        "evolve_name":None,"boss":True,"story_unlock":"scorching_desert",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -359,7 +359,7 @@ MONSTERS = {
                  {"item":"holy_dust","chance":0.8,"rarity":"rare"},
                  {"item":"mithril_blade","chance":0.4,"rarity":"rare"},
                  {"item":"amulet_wisdom","chance":0.25,"rarity":"epic"}],
-        "evolve_name":None,"boss":True,"story_unlock":"tundra_access",
+        "evolve_name":None,"boss":True,"story_unlock":"frozen_tundra",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -471,7 +471,7 @@ MONSTERS = {
                  {"item":"dragon_scale","chance":0.8,"rarity":"epic"},
                  {"item":"dragon_bone","chance":0.6,"rarity":"epic"},
                  {"item":"mithril_mail","chance":0.4,"rarity":"rare"}],
-        "evolve_name":None,"boss":True,"story_unlock":"swamp_access",
+        "evolve_name":None,"boss":True,"story_unlock":"murky_swamp",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -575,7 +575,7 @@ MONSTERS = {
                  {"item":"dragon_scale","chance":0.5,"rarity":"epic"},
                  {"item":"vine_whip","chance":0.4,"rarity":"epic"},
                  {"item":"ring_swiftness","chance":0.35,"rarity":"rare"}],
-        "evolve_name":None,"boss":True,"story_unlock":"swamp_access",
+        "evolve_name":None,"boss":True,"story_unlock":"murky_swamp",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -677,7 +677,7 @@ MONSTERS = {
                  {"item":"dragon_scale","chance":0.6,"rarity":"epic"},
                  {"item":"dragonscale_armor","chance":0.3,"rarity":"epic"},
                  {"item":"ring_swiftness","chance":0.4,"rarity":"rare"}],
-        "evolve_name":None,"boss":True,"story_unlock":"volcanic_access",
+        "evolve_name":None,"boss":True,"story_unlock":"volcanic_highlands",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -782,7 +782,7 @@ MONSTERS = {
                  {"item":"dragon_bone","chance":0.8,"rarity":"epic"},
                  {"item":"dragonslayer","chance":0.3,"rarity":"legendary"},
                  {"item":"berserkers_fury","chance":0.3,"rarity":"epic"}],
-        "evolve_name":None,"boss":True,"story_unlock":"ruins_access",
+        "evolve_name":None,"boss":True,"story_unlock":"haunted_ruins",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -886,7 +886,7 @@ MONSTERS = {
                  {"item":"dragon_bone","chance":0.7,"rarity":"epic"},
                  {"item":"void_shroud","chance":0.4,"rarity":"legendary"},
                  {"item":"crown_eternity","chance":0.2,"rarity":"mythical"}],
-        "evolve_name":None,"boss":True,"story_unlock":"cavern_access",
+        "evolve_name":None,"boss":True,"story_unlock":"crystal_caverns",
     },
 
     # ══════════════════════════════════════════════════════════
@@ -988,7 +988,7 @@ MONSTERS = {
                  {"item":"mithril_ore","chance":0.8,"rarity":"legendary"},
                  {"item":"ancient_rune","chance":0.5,"rarity":"legendary"},
                  {"item":"cosmos_staff","chance":0.2,"rarity":"mythical"}],
-        "evolve_name":None,"boss":True,"story_unlock":"skyreach_access",
+        "evolve_name":None,"boss":True,"story_unlock":"skyreach_peaks",
     },
 
     # ══════════════════════════════════════════════════════════

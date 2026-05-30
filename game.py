@@ -10,7 +10,7 @@ from ui.screens import (SplashScreen, MainMenuScreen, LoadGameScreen,
                          PetMenuScreen, VillageScreen, ShopScreen,
                          BlacksmithScreen, WorldMapScreen, PauseScreen,
                          SettingsScreen, HostLobbyScreen, JoinLobbyScreen,
-                         MultiplayerMenuScreen)
+                         MultiplayerMenuScreen, CraftingScreen)
 from networking.protocol import (MSG_PEER_POS, MSG_CHAT, MSG_SAVE_REQ, MSG_SAVE_ACK, MSG_BYE,
                                    MSG_BATTLE_START, MSG_BATTLE_END, MSG_ALLY_ATTACK,
                                    MSG_COOP_JOIN, MSG_COOP_SYNC, MSG_COOP_ACTION)
@@ -131,6 +131,7 @@ class Game:
             "pet_menu":     lambda: PetMenuScreen(self),
             "village":      lambda: VillageScreen(self),
             "shop":         lambda: ShopScreen(self),
+            "crafting":     lambda: CraftingScreen(self),
             "blacksmith":   lambda: BlacksmithScreen(self),
             "world_map":    lambda: WorldMapScreen(self, fast_travel_mode=False),
             "fast_travel":  lambda: WorldMapScreen(self, fast_travel_mode=True),

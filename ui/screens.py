@@ -2963,15 +2963,21 @@ class VillageScreen(Screen):
         self.village = biome["village"]
         self.msg = ""
         cx = SCREEN_W // 2
-        bw, bh = 280, 52
+        bw, bh = 280, 50
         bx = cx - bw // 2
+        # 7 buttons spaced 56 px apart starting at y=152
+        _labels = [
+            ("inn",      "🏨 Inn (Rest & Save)",  DARK_BLUE),
+            ("shop",     "🛒 Shop",               DARK_GREEN),
+            ("smith",    "⚒ Blacksmith",          (80, 60, 40)),
+            ("crafting", "⚗ Crafting",            (55, 35, 80)),
+            ("stable",   "♦ Pet Stable",          PURPLE),
+            ("travel",   "✈ Fast Travel",         (40, 80, 100)),
+            ("leave",    "← Leave Village",       MID_GRAY),
+        ]
         self.buttons = {
-            "inn":     Button(pygame.Rect(bx, 200, bw, bh), "🏨 Inn (Rest & Save)",  DARK_BLUE),
-            "shop":    Button(pygame.Rect(bx, 265, bw, bh), "🛒 Shop",               DARK_GREEN),
-            "smith":   Button(pygame.Rect(bx, 330, bw, bh), "⚒ Blacksmith",          (80,60,40)),
-            "stable":  Button(pygame.Rect(bx, 395, bw, bh), "♦ Pet Stable",          PURPLE),
-            "travel":  Button(pygame.Rect(bx, 460, bw, bh), "✈ Fast Travel",         (40,80,100)),
-            "leave":   Button(pygame.Rect(bx, 540, bw, bh), "← Leave Village",       MID_GRAY),
+            k: Button(pygame.Rect(bx, 152 + i * 56, bw, bh), label, col)
+            for i, (k, label, col) in enumerate(_labels)
         }
 
     def handle_event(self, event):
@@ -2979,13 +2985,20 @@ class VillageScreen(Screen):
             p = self.game.player
             p.hp = p.max_hp; p.mp = p.max_mp
             p.status_effects.clear()
+            # Also restore the active pet so it wakes up fully recovered
+            if p.active_pet:
+                p.active_pet.hp = p.active_pet.max_hp
+                p.active_pet.status_effects = {}
             from systems.save_load import auto_save
             auto_save(p)
-            self.msg = "Rested fully. Game auto-saved!"
+            pet_note = f"  {p.active_pet.name} also restored!" if p.active_pet else ""
+            self.msg = f"Rested fully.{pet_note}  Game auto-saved!"
         if self.buttons["shop"].is_clicked(event):
             self.game.set_screen("shop")
         if self.buttons["smith"].is_clicked(event):
             self.game.set_screen("blacksmith")
+        if self.buttons["crafting"].is_clicked(event):
+            self.game.set_screen("crafting")
         if self.buttons["stable"].is_clicked(event):
             self.game.set_screen("pet_menu")
         if self.buttons["travel"].is_clicked(event):
@@ -3014,7 +3027,27 @@ class VillageScreen(Screen):
 # ═════════════════════════════════════════════════════════════════════════════
 # SHOP
 # ═════════════════════════════════════════════════════════════════════════════
+def _shop_category(item_type: str) -> str:
+    """Map an item's type string to one of four shop category keys."""
+    if item_type == "weapon":
+        return "weapon"
+    if item_type.startswith("armor_"):
+        return "armour"
+    if item_type == "consumable":
+        return "usable"
+    return "misc"
+
+
 class ShopScreen(Screen):
+    # ── Layout constants ─────────────────────────────────────────────────────
+    _CAT_Y      = 48          # y of category filter row
+    _LIST_Y     = 82          # y lists start
+    _LIST_H     = 444         # list height  (ends at y=526)
+    _DETAIL_Y   = 530         # detail panel top
+    _DETAIL_H   = 86          # detail panel height
+    _MSG_Y      = 622         # feedback message y
+    _BTN_Y      = SCREEN_H - 50  # action buttons y
+
     def __init__(self, game):
         super().__init__(game)
         p = game.player
@@ -3022,14 +3055,45 @@ class ShopScreen(Screen):
         self.shop_items = self.biome["village"]["shop_items"]
         self.tab = "buy"
         self.msg = ""
-        self.selected_buy = -1
+        self.selected_buy  = -1
         self.selected_sell = -1
+        self._detail_iid   = ""    # item currently shown in detail panel
+        self._detail_rar   = "common"
+
+        # ── Category filter row (buy list only) ───────────────────────────────
+        self.buy_cat = "all"
+        _lw   = SCREEN_W // 2 - 20   # width of one list column
+        _catw = _lw // 5
+        _cats = [("all","All"),("weapon","Wpn"),("armour","Arm"),
+                 ("usable","Use"),("misc","Misc")]
+        self.cat_btns = {
+            k: Button(pygame.Rect(10 + i * _catw, self._CAT_Y, _catw - 3, 28), lbl)
+            for i, (k, lbl) in enumerate(_cats)
+        }
+
         self._build()
-        self.btn_back = Button(pygame.Rect(10, SCREEN_H - 50, 100, 40), "← Back")
-        self.btn_buy  = Button(pygame.Rect(SCREEN_W - 220, SCREEN_H - 50, 100, 40), "Buy", DARK_GREEN)
-        self.btn_sell = Button(pygame.Rect(SCREEN_W - 110, SCREEN_H - 50, 100, 40), "Sell", DARK_RED)
-        self.tab_buy  = Button(pygame.Rect(200, 10, 100, 36), "Buy")
-        self.tab_sell = Button(pygame.Rect(310, 10, 100, 36), "Sell")
+
+        self.btn_back = Button(pygame.Rect(10,             self._BTN_Y, 100, 40), "← Back")
+        self.btn_buy  = Button(pygame.Rect(SCREEN_W - 220, self._BTN_Y, 100, 40), "Buy",  DARK_GREEN)
+        self.btn_sell = Button(pygame.Rect(SCREEN_W - 110, self._BTN_Y, 100, 40), "Sell", DARK_RED)
+        self.tab_buy  = Button(pygame.Rect(200, 10, 100, 34), "Buy")
+        self.tab_sell = Button(pygame.Rect(310, 10, 100, 34), "Sell")
+
+        # ── Sell-quantity dialog (unchanged) ──────────────────────────────────
+        self._qty_active  = False
+        self._qty_text    = "1"
+        self._qty_entry   = None
+        self._qty_price   = 0
+        _dw, _dh = 380, 228
+        _dx = (SCREEN_W - _dw) // 2
+        _dy = (SCREEN_H - _dh) // 2
+        self._qty_panel   = pygame.Rect(_dx, _dy, _dw, _dh)
+        self._qty_input   = pygame.Rect(_dx + 104, _dy + 104, 124, 38)
+        self._qty_max_btn = Button(pygame.Rect(_dx + 240, _dy + 104, 72, 38), "Max")
+        self._qty_ok_btn  = Button(pygame.Rect(_dx + 28,  _dy + 166, 140, 42),
+                                   "Confirm", DARK_GREEN)
+        self._qty_can_btn = Button(pygame.Rect(_dx + 212, _dy + 166, 140, 42),
+                                   "Cancel",  DARK_RED)
 
         # ── Sell-quantity dialog ──────────────────────────────────────────────
         self._qty_active  = False  # modal open?
@@ -3048,27 +3112,37 @@ class ShopScreen(Screen):
                                    "Cancel",  DARK_RED)
 
     def _build(self):
-        p = self.game.player
-        # Buy list
+        p  = self.game.player
+        lw = SCREEN_W // 2 - 20
+
+        # ── Buy list (category-filtered) ──────────────────────────────────────
         buy_items = []
         for iid in self.shop_items:
             item = ITEMS.get(iid, {})
+            if (self.buy_cat != "all"
+                    and _shop_category(item.get("type","")) != self.buy_cat):
+                continue
             price = item.get("buy", 0)
-            col = WHITE if p.gold >= price else UI_DIM
+            col   = WHITE if p.gold >= price else UI_DIM
             buy_items.append((f"{item.get('name','?')}  {price}g", iid, col))
-        self.buy_list = ScrollList(pygame.Rect(10, 60, SCREEN_W//2 - 20, SCREEN_H - 130), buy_items, item_h=38)
+        self.buy_list = ScrollList(
+            pygame.Rect(10, self._LIST_Y, lw, self._LIST_H),
+            buy_items, item_h=38)
 
-        # Sell list
+        # ── Sell list (all inventory) ─────────────────────────────────────────
         from systems.loot import item_sell_price
         sell_items = []
         for entry in p.inventory:
-            iid = entry["id"]
-            item = ITEMS.get(iid, {})
-            rarity = entry.get("rarity","common")
-            price = item_sell_price(iid, rarity)
-            col = RARITY_COLORS.get(rarity, WHITE)
-            sell_items.append((f"{item.get('name','?')} x{entry['qty']}  → {price}g", iid, col))
-        self.sell_list = ScrollList(pygame.Rect(SCREEN_W//2 + 10, 60, SCREEN_W//2 - 20, SCREEN_H - 130), sell_items, item_h=38)
+            iid    = entry["id"]
+            item   = ITEMS.get(iid, {})
+            rarity = entry.get("rarity", "common")
+            price  = item_sell_price(iid, rarity)
+            col    = RARITY_COLORS.get(rarity, WHITE)
+            sell_items.append(
+                (f"{item.get('name','?')} x{entry['qty']}  → {price}g", iid, col))
+        self.sell_list = ScrollList(
+            pygame.Rect(SCREEN_W // 2 + 10, self._LIST_Y, lw, self._LIST_H),
+            sell_items, item_h=38)
 
     def handle_event(self, event):
         # ── Sell-quantity modal (absorbs all events while open) ───────────────
@@ -3102,14 +3176,36 @@ class ShopScreen(Screen):
         # ── Normal shop handling ──────────────────────────────────────────────
         if self.btn_back.is_clicked(event):
             self.game.set_screen("village")
-        if self.tab_buy.is_clicked(event): self.tab = "buy"
+        if self.tab_buy.is_clicked(event):  self.tab = "buy"
         if self.tab_sell.is_clicked(event): self.tab = "sell"
 
+        # Category filter
+        for cat_key, btn in self.cat_btns.items():
+            if btn.is_clicked(event) and cat_key != self.buy_cat:
+                self.buy_cat     = cat_key
+                self.selected_buy = -1
+                self._detail_iid = ""
+                self._build()
+
         idx = self.buy_list.handle_event(event)
-        if idx >= 0: self.selected_buy = idx
+        if idx >= 0:
+            self.selected_buy = idx
+            # Update detail panel: look up the iid from the filtered list
+            shown = [iid for iid in self.shop_items
+                     if self.buy_cat == "all"
+                     or _shop_category(ITEMS.get(iid,{}).get("type","")) == self.buy_cat]
+            if idx < len(shown):
+                self._detail_iid = shown[idx]
+                self._detail_rar = ITEMS.get(shown[idx], {}).get("rarity","common")
 
         idx = self.sell_list.handle_event(event)
-        if idx >= 0: self.selected_sell = idx
+        if idx >= 0:
+            self.selected_sell = idx
+            p = self.game.player
+            if idx < len(p.inventory):
+                entry = p.inventory[idx]
+                self._detail_iid = entry["id"]
+                self._detail_rar = entry.get("rarity", "common")
 
         if self.btn_buy.is_clicked(event) and self.selected_buy >= 0:
             self._do_buy()
@@ -3169,7 +3265,10 @@ class ShopScreen(Screen):
 
     def update(self, dt):
         mp = pygame.mouse.get_pos()
-        for btn in (self.btn_back, self.btn_buy, self.btn_sell, self.tab_buy, self.tab_sell):
+        for btn in (self.btn_back, self.btn_buy, self.btn_sell,
+                    self.tab_buy, self.tab_sell):
+            btn.update(mp)
+        for btn in self.cat_btns.values():
             btn.update(mp)
         if self._qty_active:
             for btn in (self._qty_ok_btn, self._qty_can_btn, self._qty_max_btn):
@@ -3181,13 +3280,76 @@ class ShopScreen(Screen):
         draw_text_centered(surf, "Shop", 14, GOLD, size=24)
         draw_text(surf, f"Gold: {p.gold}g", SCREEN_W - 190, 16, GOLD, size=15)
         self.tab_buy.draw(surf); self.tab_sell.draw(surf)
+
+        # Category filter row (highlight active)
+        for cat_key, btn in self.cat_btns.items():
+            # Tint the active category button for clarity
+            _orig_col = btn.color
+            if cat_key == self.buy_cat:
+                btn.color = UI_HIGHLIGHT
+            btn.draw(surf)
+            btn.color = _orig_col
+
         self.buy_list.draw(surf)
         self.sell_list.draw(surf)
+
+        # Detail panel
+        self._draw_item_detail(surf)
+
         self.btn_back.draw(surf); self.btn_buy.draw(surf); self.btn_sell.draw(surf)
         if self.msg:
-            draw_text_centered(surf, self.msg, SCREEN_H - 70, YELLOW, size=14)
+            draw_text_centered(surf, self.msg, self._MSG_Y, YELLOW, size=13)
         if self._qty_active:
             self._draw_qty_dialog(surf)
+
+    def _draw_item_detail(self, surf):
+        """Draw the stat/description panel for the currently selected item."""
+        if not self._detail_iid:
+            return
+        item = ITEMS.get(self._detail_iid, {})
+        if not item:
+            return
+        panel = pygame.Rect(10, self._DETAIL_Y, SCREEN_W - 20, self._DETAIL_H)
+        pygame.draw.rect(surf, UI_PANEL, panel, border_radius=6)
+        pygame.draw.rect(surf, UI_BORDER, panel, 1, border_radius=6)
+
+        x, y = panel.x + 8, panel.y + 6
+        rarity = self._detail_rar
+        name_col = RARITY_COLORS.get(rarity, WHITE)
+
+        # Name + rarity badge
+        draw_text(surf, item.get("name", "?"), x, y, name_col, size=16)
+        badge = f"[{rarity.upper()}]"
+        draw_text(surf, badge, x + 220, y + 2, name_col, size=12)
+
+        # Type label
+        itype = item.get("type", "")
+        draw_text(surf, itype.replace("_", " ").title(),
+                  x + 360, y + 2, UI_DIM, size=12)
+
+        # Stats row
+        stats = item.get("stats", {})
+        stat_parts = []
+        _stat_labels = [("atk","ATK"),("def","DEF"),("hp","HP"),("mp","MP"),
+                        ("spd","SPD"),("int","INT"),("lck","LCK")]
+        for k, lbl in _stat_labels:
+            if k in stats:
+                v = stats[k]
+                stat_parts.append(f"{lbl} {'+' if v>0 else ''}{v}")
+        stats_str = "  ".join(stat_parts) if stat_parts else "No stat bonuses"
+        draw_text(surf, stats_str, x, y + 22, CYAN, size=13)
+
+        # Description
+        desc = item.get("desc", "")
+        if desc:
+            draw_text(surf, desc[:90] + ("…" if len(desc) > 90 else ""),
+                      x, y + 42, UI_DIM, size=12)
+
+        # Classes
+        classes = item.get("classes", [])
+        if isinstance(classes, list) and classes:
+            cls_str = "Classes: " + ", ".join(c.title() for c in classes[:6])
+            draw_text(surf, cls_str, x, y + 60, LIGHT_GRAY, size=11)
 
     def _draw_qty_dialog(self, surf):
         from data.items_data import ITEMS
@@ -3301,6 +3463,165 @@ class BlacksmithScreen(Screen):
         self.btn_back.draw(surf); self.btn_upgrade.draw(surf)
         if self.msg:
             draw_text_centered(surf, self.msg, SCREEN_H - 80, YELLOW, size=14)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CRAFTING
+# ═════════════════════════════════════════════════════════════════════════════
+class CraftingScreen(Screen):
+    """Let the player combine materials into consumables, weapons, and armour."""
+
+    _LIST_X   = 10
+    _LIST_Y   = 54
+    _LIST_W   = SCREEN_W // 2 - 16
+    _LIST_H   = SCREEN_H - 130
+    _DETAIL_X = SCREEN_W // 2 + 6
+    _DETAIL_W = SCREEN_W // 2 - 16
+
+    def __init__(self, game):
+        super().__init__(game)
+        from data.recipes_data import RECIPES
+        self._recipes   = RECIPES
+        self.selected   = -1
+        self.msg        = ""
+        self._build_list()
+        self.btn_back  = Button(
+            pygame.Rect(10, SCREEN_H - 50, 110, 40), "← Back")
+        self.btn_craft = Button(
+            pygame.Rect(SCREEN_W - 130, SCREEN_H - 50, 120, 40),
+            "Craft", DARK_GREEN)
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _can_craft(self, recipe) -> bool:
+        p = self.game.player
+        for iid, need in recipe["inputs"].items():
+            if p.item_count(iid) < need:
+                return False
+        return True
+
+    def _build_list(self):
+        items = []
+        for rec in self._recipes:
+            out  = ITEMS.get(rec["output"], {})
+            name = f"{rec['name']}  → ×{rec['qty']}"
+            col  = GREEN if self._can_craft(rec) else UI_DIM
+            items.append((name, rec["id"], col))
+        self.recipe_list = ScrollList(
+            pygame.Rect(self._LIST_X, self._LIST_Y,
+                        self._LIST_W, self._LIST_H),
+            items, item_h=36)
+        if self.selected >= len(items):
+            self.selected = -1
+        self.recipe_list.selected = self.selected
+
+    def _do_craft(self):
+        if self.selected < 0 or self.selected >= len(self._recipes):
+            return
+        rec = self._recipes[self.selected]
+        if not self._can_craft(rec):
+            self.msg = "Not enough materials!"; return
+        p = self.game.player
+        for iid, qty in rec["inputs"].items():
+            p.remove_item(iid, qty)
+        out_item = ITEMS.get(rec["output"], {})
+        out_rar  = out_item.get("rarity", "common")
+        p.add_item(rec["output"], rec["qty"], out_rar)
+        self.msg = f"Crafted {rec['name']} ×{rec['qty']}!"
+        self._build_list()
+
+    # ── Screen interface ──────────────────────────────────────────────────────
+
+    def handle_event(self, event):
+        if self.btn_back.is_clicked(event):
+            self.game.set_screen("village"); return
+        if self.btn_craft.is_clicked(event):
+            self._do_craft(); return
+        idx = self.recipe_list.handle_event(event)
+        if idx >= 0:
+            self.selected = idx
+
+    def update(self, dt):
+        mp = pygame.mouse.get_pos()
+        self.btn_back.update(mp); self.btn_craft.update(mp)
+
+    def draw(self, surf):
+        surf.fill(UI_BG)
+        draw_text_centered(surf, "Crafting", 14, GOLD, size=26)
+
+        # Recipe list (left)
+        self.recipe_list.draw(surf)
+
+        # Detail panel (right)
+        if 0 <= self.selected < len(self._recipes):
+            self._draw_detail(surf)
+        else:
+            draw_text_centered(surf, "Select a recipe to see details",
+                               SCREEN_H // 2, UI_DIM, size=15)
+
+        self.btn_back.draw(surf); self.btn_craft.draw(surf)
+        if self.msg:
+            draw_text_centered(surf, self.msg, SCREEN_H - 74, YELLOW, size=13)
+
+    def _draw_detail(self, surf):
+        rec      = self._recipes[self.selected]
+        p        = self.game.player
+        out_item = ITEMS.get(rec["output"], {})
+        out_rar  = out_item.get("rarity", "common")
+        out_col  = RARITY_COLORS.get(out_rar, WHITE)
+        can      = self._can_craft(rec)
+
+        dx = self._DETAIL_X
+        dy = self._LIST_Y
+        dw = self._DETAIL_W
+
+        # Panel background
+        panel = pygame.Rect(dx, dy, dw, self._LIST_H)
+        pygame.draw.rect(surf, UI_PANEL, panel, border_radius=6)
+        pygame.draw.rect(surf, UI_BORDER, panel, 1, border_radius=6)
+
+        tx, ty = dx + 10, dy + 10
+
+        # Output item header
+        draw_text(surf, "Result:", tx, ty, UI_DIM, size=13); ty += 20
+        draw_text(surf, f"{out_item.get('name','?')}  ×{rec['qty']}",
+                  tx, ty, out_col, size=18); ty += 26
+        draw_text(surf, out_item.get("desc","")[:60],
+                  tx, ty, UI_DIM, size=12); ty += 22
+
+        # Stats of the output item
+        stats = out_item.get("stats", {})
+        if stats:
+            _stat_labels = [("atk","ATK"),("def","DEF"),("hp","HP"),
+                            ("mp","MP"),("spd","SPD"),("int","INT"),("lck","LCK")]
+            stat_str = "  ".join(
+                f"{lbl} {'+' if v>0 else ''}{v}"
+                for k, lbl in _stat_labels if (v := stats.get(k)) is not None
+            )
+            draw_text(surf, stat_str, tx, ty, CYAN, size=12); ty += 20
+
+        ty += 6
+        pygame.draw.line(surf, UI_BORDER, (dx+6, ty), (dx+dw-6, ty), 1); ty += 10
+
+        # Ingredient list
+        draw_text(surf, "Requires:", tx, ty, GOLD, size=14); ty += 22
+        for iid, need in rec["inputs"].items():
+            have     = p.item_count(iid)
+            ing_item = ITEMS.get(iid, {})
+            ok       = have >= need
+            col      = GREEN if ok else RED
+            check    = "✓" if ok else "✗"
+            draw_text(surf,
+                      f"{check}  {ing_item.get('name', iid)}",
+                      tx, ty, col, size=14)
+            draw_text(surf, f"{have}/{need}",
+                      dx + dw - 60, ty, col, size=13)
+            ty += 24
+
+        ty += 10
+        status_col = GREEN if can else (220, 80, 60)
+        status_msg = "Ready to craft!" if can else "Missing ingredients"
+        draw_text_centered(surf, status_msg, ty, status_col, size=15)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

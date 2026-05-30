@@ -50,9 +50,19 @@ class Game:
             self._game_h = int(SCREEN_H * _scale)
             self._game_x = (_rw - self._game_w) // 2
             self._game_y = (_rh - self._game_h) // 2
-            # Logical drawing surface — all game code targets this resolution.
-            # .convert() matches the display pixel format (avoids colour shifts).
-            self.screen = pygame.Surface((SCREEN_W, SCREEN_H)).convert()
+            # Logical drawing surface — plain 32-bit, NO .convert().
+            # Why no convert(): the 3-arg transform.scale() writes raw pixel
+            # bytes without format conversion.  If self.screen were converted
+            # to the display's format (e.g. ABGR) and the scale-buffer were
+            # in a different format, RGB channels would be reordered and
+            # colours would be wrong (water blue → orange, etc.).
+            # Instead we keep self.screen in the default pygame format, scale
+            # into a same-format buffer, then let display.blit() do the one
+            # correct SDL2 format conversion at the very end.
+            self.screen    = pygame.Surface((SCREEN_W, SCREEN_H))
+            # Pre-allocated scale buffer (same format as self.screen → safe
+            # for the raw-byte 3-arg transform.scale call).
+            self._scale_buf = pygame.Surface((self._game_w, self._game_h))
         else:
             self._display = None
             self._game_w  = SCREEN_W
@@ -391,16 +401,16 @@ class Game:
             self._current_screen.draw(self.screen)
 
             if self._display is not None:
-                # Fill letterbox bars (visible on wider-than-16:9 phones).
+                # Scale into the same-format buffer (raw byte copy, no
+                # conversion needed because both surfaces share the format).
+                pygame.transform.scale(
+                    self.screen, (self._game_w, self._game_h), self._scale_buf)
+                # Black letterbox bars, then blit the scaled game image.
+                # display.blit() uses SDL2's BlitSurface which performs the
+                # correct pixel-format conversion from our plain Surface to
+                # whatever format the Android display surface uses internally.
                 self._display.fill((0, 0, 0))
-                # Scale game into the letterboxed rect (uniform scale, no
-                # distortion).  subsurface() gives a view into the display
-                # surface so transform.scale() writes directly there.
-                _dest = self._display.subsurface(
-                    pygame.Rect(self._game_x, self._game_y,
-                                self._game_w, self._game_h)
-                )
-                pygame.transform.scale(self.screen, (self._game_w, self._game_h), _dest)
+                self._display.blit(self._scale_buf, (self._game_x, self._game_y))
                 pygame.display.flip()
             else:
                 pygame.display.flip()

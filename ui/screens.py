@@ -522,6 +522,9 @@ class ExplorationScreen(Screen):
                     p.position_biome = dest
                     p.position_x = -1   # safe_entry_pos() will fix this
                     p.position_y = -1
+                    # Guarantee the destination is unlocked for future fast travel
+                    p.unlocked_biomes.add(dest)
+                    p.discovered_biomes.add(dest)
                     self.keys_held.clear()
                     self.game.set_screen("exploration")
             # Keep keys_held accurate even while dialog is blocking input —
@@ -2192,11 +2195,13 @@ class CombatScreen(Screen):
         if self.is_boss:
             p.defeated_bosses.add(self.monster.monster_id)
             unlock = MONSTERS[self.monster.monster_id].get("story_unlock")
-            if unlock and unlock.endswith("_access"):
-                target = unlock.replace("_access", "")
-                p.unlocked_biomes.add(target)
-                p.discovered_biomes.add(target)
-                self.add_log(f"New area unlocked: {BIOMES.get(target,{}).get('name', target)}!")
+            # story_unlock is now the direct biome ID (e.g. "whispering_forest").
+            # The old _access pattern was removed when we fixed the data.
+            if unlock and unlock in BIOMES:
+                p.unlocked_biomes.add(unlock)
+                p.discovered_biomes.add(unlock)
+                self.add_log(f"New area unlocked: {BIOMES[unlock]['name']}!")
+                self.add_log("Fast travel to the new area is now available!")
             if unlock == "ending":
                 p.story_flags.add("game_complete")
             # Post-boss story
